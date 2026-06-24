@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neurocardiokit"
+version = "0.1.0"
+description = "NeuroCardioKit — EEG + ECG/HRV 联合分析工具箱"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "scipy",
+    "hrv-analysis",
+]

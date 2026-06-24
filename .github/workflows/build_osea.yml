@@ -1,0 +1,44 @@
+name: Build OSEA
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            artifact: osea.dll
+          - os: ubuntu-latest
+            artifact: osea.so
+          - os: macos-latest
+            artifact: osea.dylib
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MinGW (Windows)
+        if: runner.os == 'Windows'
+        run: choco install mingw -y
+
+      - name: Build
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            python osea/build_osea.py --compiler mingw
+          else
+            python osea/build_osea.py
+          fi
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: osea-${{ runner.os }}
+          path: osea/${{ matrix.artifact }}
