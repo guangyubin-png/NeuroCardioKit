@@ -23,7 +23,10 @@ Low-level usage (if DLL is not in default path):
 import ctypes
 import os
 import sys
+import json
 from ctypes import c_int, POINTER, byref
+
+_GITHUB_REPO = "guangyubin-png/NeuroCardioKit"
 
 # ---------------------------------------------------------------------------
 # Annotation type mapping
@@ -59,7 +62,7 @@ def _osea_lib_name():
 
 
 def _find_osea_dll():
-    """Locate the OSEA shared library in standard locations."""
+    """Locate the OSEA shared library — local first, then auto-download from GitHub Release."""
     here = os.path.dirname(os.path.abspath(__file__))
     libname = _osea_lib_name()
     candidates = [
@@ -70,8 +73,64 @@ def _find_osea_dll():
     for p in candidates:
         if os.path.exists(p):
             return os.path.abspath(p)
+
+    # Auto-download from GitHub Release
+    downloaded = _download_osea_lib(os.path.join(here, libname))
+    if downloaded:
+        return downloaded
+
     # Fallback: let ctypes search PATH
     return libname
+
+
+def _download_osea_lib(target_path):
+    """Download the platform-appropriate OSEA library from the latest GitHub Release."""
+    api_url = f"https://api.github.com/repos/{_GITHUB_REPO}/releases/latest"
+    libname = _osea_lib_name()
+
+    try:
+        import urllib.request
+        import ssl
+
+        # Try verified SSL first, fallback to unverified (corporate proxies, etc.)
+        ctx = None
+        for attempt in [None, ssl._create_unverified_context()]:
+            try:
+                req = urllib.request.Request(api_url)
+                req.add_header("Accept", "application/vnd.github+json")
+                req.add_header("User-Agent", "NeuroCardioKit")
+                with urllib.request.urlopen(req, timeout=15, context=attempt) as resp:
+                    release = json.loads(resp.read())
+                ctx = attempt
+                break
+            except Exception:
+                if attempt is not None:
+                    raise
+
+        # Find the right asset for this platform
+        asset_url = None
+        for asset in release.get("assets", []):
+            if asset["name"] == libname:
+                asset_url = asset["browser_download_url"]
+                break
+
+        if not asset_url:
+            print(f"[neurocardiokit] No {libname} found in latest GitHub Release")
+            return None
+
+        # Download the library (urlretrieve doesn't support ssl_context, use urlopen)
+        print(f"[neurocardiokit] Downloading {libname} ...")
+        req2 = urllib.request.Request(asset_url)
+        with urllib.request.urlopen(req2, timeout=60, context=ctx) as resp:
+            with open(target_path, "wb") as f:
+                f.write(resp.read())
+        os.chmod(target_path, 0o755)
+        print(f"[neurocardiokit] {libname} saved")
+        return os.path.abspath(target_path)
+
+    except Exception as e:
+        print(f"[neurocardiokit] Auto-download failed: {e}")
+        return None
 
 
 _DLL_LOAD_ERROR = """
