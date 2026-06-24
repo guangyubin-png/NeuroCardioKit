@@ -2,7 +2,8 @@
 import numpy as np
 
 
-def split_windows(nn, nn_time=None, segment_len_s=300, step_s=None, min_beats=10):
+def split_windows(nn, nn_time=None, segment_len_s=300, step_s=None,
+                  min_beats=10, total_s=None):
     """
     Split a full-length NN sequence into fixed-duration windows.
 
@@ -16,10 +17,15 @@ def split_windows(nn, nn_time=None, segment_len_s=300, step_s=None, min_beats=10
         segment_len_s: Window length in seconds (default 300 = 5 min).
         step_s: Step between consecutive windows in seconds.
                 None (default) = contiguous (step = segment_len_s).
-        min_beats: Minimum number of beats per window; windows with fewer are discarded.
+        min_beats: Minimum number of beats per window. Windows with fewer
+                   are returned as empty arrays when total_s is set.
+        total_s: Total duration in seconds to generate windows for.
+                 If provided, windows are generated from 0 to total_s
+                 regardless of nn_time range. Windows with < min_beats
+                 become empty lists (not dropped).
 
     Returns:
-        List of 1D numpy arrays, each containing the NN intervals of one valid window.
+        List of 1D numpy arrays, each containing the NN intervals of one window.
     """
     if len(nn) == 0:
         return []
@@ -32,11 +38,11 @@ def split_windows(nn, nn_time=None, segment_len_s=300, step_s=None, min_beats=10
 
     if nn_time is not None and len(nn_time) == len(nn):
         time_s = np.asarray(nn_time, dtype=float)
-        total_s = time_s[-1] + nn[-1] / 1000.0  # approximate end of last interval
     else:
-        # Fallback: cumulative NN
         time_s = np.cumsum(nn) / 1000.0
-        total_s = time_s[-1]
+
+    if total_s is None:
+        total_s = time_s[-1] + nn[-1] / 1000.0
 
     windows = []
     start_s = 0.0
@@ -44,8 +50,8 @@ def split_windows(nn, nn_time=None, segment_len_s=300, step_s=None, min_beats=10
         end_s = start_s + segment_len_s
         mask = (time_s >= start_s) & (time_s < end_s)
         seg = nn[mask]
-        if len(seg) >= min_beats:
-            windows.append(seg)
+        if len(seg) >= min_beats or total_s is not None:
+            windows.append(seg if len(seg) >= min_beats else np.array([], dtype=float))
         start_s += step_s
 
     return windows

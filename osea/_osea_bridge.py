@@ -330,6 +330,59 @@ class OseaEngine:
                 })
         return results
 
+    def detect_rpeaks(self, ecg_mv, fs):
+        """
+        Detect R-peak positions from an ECG signal at any sampling rate.
+
+        Handles resampling to 200 Hz, unit conversion (mV → ADC),
+        and delay correction automatically.
+
+        Parameters
+        ----------
+        ecg_mv : array-like
+            1-D ECG signal in mV.
+        fs : float
+            Sampling rate of the input signal (Hz).
+
+        Returns
+        -------
+        rpos : ndarray (int)
+            R-peak sample indices in the **original** sampling rate,
+            delay-corrected. All detected beats.
+        anntype : ndarray (int)
+            Beat type code for each R-peak (1=NORMAL, 5=PVC, etc.).
+            Same length as rpos.
+        """
+        import numpy as np
+        from scipy.interpolate import interp1d
+
+        ecg_mv = np.asarray(ecg_mv, dtype=np.float64)
+        ecg_mv = ecg_mv - np.mean(ecg_mv)  # center baseline
+
+        if fs != 200.0:
+            n_dst = int(len(ecg_mv) * 200.0 / fs)
+            t_src = np.arange(len(ecg_mv)) / fs
+            t_dst = np.arange(n_dst) / 200.0
+            f_interp = interp1d(t_src, ecg_mv, kind='linear', copy=False,
+                                assume_sorted=True)
+            ecg_200 = f_interp(t_dst)
+        else:
+            ecg_200 = ecg_mv
+
+        # mV → ADC (200 units/mV), center baseline again after conversion
+        ecg_adc = ecg_200 * 200.0
+        ecg_adc -= np.mean(ecg_adc)
+
+        beats = self.process_array(ecg_adc.astype(int))
+
+        # Map to original sampling rate with delay correction
+        scale = fs / 200.0
+        rpos = np.array([int((b['index'] - b['delay']) * scale)
+                         for b in beats], dtype=int)
+        anntype = np.array([b['type'] for b in beats], dtype=int)
+
+        return rpos, anntype
+
     def process_array_qrs_only(self, ecg_array):
         """
         Process array with QRS detection only (no classification).

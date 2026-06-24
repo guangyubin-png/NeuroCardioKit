@@ -79,28 +79,28 @@ def _compute_global_matrix(nn, fs_nn, active, feat_names):
 
 
 def _compute_segments_result(nn, nn_time, fs_nn, segment_len, segment_overlap,
-                              active, feat_names):
+                              active, feat_names, total_s=None):
     """Compute per-segment features → feature_matrix + metadata."""
     step_s = segment_len - segment_overlap if segment_overlap else None
     windows = split_windows(nn, nn_time=nn_time, segment_len_s=segment_len,
-                            step_s=step_s)
+                            step_s=step_s, total_s=total_s)
 
     n_segments = len(windows)
     n_features = len(feat_names)
-    feature_matrix = np.zeros((n_segments, n_features), dtype=float)
+    feature_matrix = np.full((n_segments, n_features), np.nan, dtype=float)
 
-    # Build segment_t_starts from nn_time
+    # Build segment_t_starts
     segment_t_starts = np.zeros(n_segments)
     start_s = 0.0
-    seg_idx = 0
     eff_step = step_s if step_s is not None else segment_len
-    while seg_idx < n_segments:
+    for seg_idx in range(n_segments):
         segment_t_starts[seg_idx] = start_s
         start_s += eff_step
-        seg_idx += 1
 
-    # Fill per-window rows
+    # Fill per-window rows; empty windows stay NaN
     for i, seg in enumerate(windows):
+        if len(seg) < 2:
+            continue
         row_parts = []
         for cls in _FEATURE_CLASSES:
             if cls not in active:
@@ -137,6 +137,7 @@ def hrv_analyze(
     fs_nn=4,
     segment_len=300,
     segment_overlap=None,
+    total_s=None,
     feat_include=None,
 ):
     """
@@ -155,6 +156,9 @@ def hrv_analyze(
         segment_len: Segment length in seconds. None = global only.
         segment_overlap: Overlap between consecutive segments in seconds.
                          None = contiguous (no overlap).
+        total_s: Total recording duration in seconds. When set, segments span
+                 exactly [0, total_s) regardless of NN coverage. Windows with
+                 insufficient beats are filled with NaN.
         feat_include: List of feature classes to compute. None = all.
                       Choices: 'time', 'freq', 'nonlinear'.
 
@@ -201,7 +205,7 @@ def hrv_analyze(
         if len(nn) >= 2:
             result['segments'] = _compute_segments_result(
                 nn, nn_time, fs_nn, segment_len, segment_overlap,
-                active, feat_names,
+                active, feat_names, total_s=total_s,
             )
         else:
             n_features = len(feat_names)
